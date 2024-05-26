@@ -14,14 +14,17 @@
     alert(
       '"Wanikani Levels Overview Plus" script requires Wanikani Open Framework.\nYou will now be forwarded to installation instructions.'
     );
-    window.location.href =
-      "https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549";
+    window.location.href = "https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549";
     return;
   }
+
+  const DayMillis = 24 * 3600 * 1000;
+  const WeekMillis = 7 * DayMillis;
 
   const wkof = window.wkof;
   const shared = {
     settings: {},
+    items: {},
 
     // SRS system id -> [seconds to pass]
     timings: {},
@@ -37,7 +40,10 @@
     levelUpTimeMillis: 0,
     numVocabLearnedToday: 0,
     recommendedVocabPerDay: 0,
+    // SubjectId -> Normalized lesson order
+    lessonOrders: {},
 
+    unlocksElement: null,
     lessonBarElement: null,
   };
 
@@ -45,11 +51,7 @@
   wkof
     .ready("document,Apiv2,ItemData,Menu,Settings")
     .then(load_settings)
-    .then(() =>
-      wkof.Apiv2.get_endpoint("spaced_repetition_systems").then(
-        calculateSrsTimings
-      )
-    )
+    .then(() => wkof.Apiv2.get_endpoint("spaced_repetition_systems").then(calculateSrsTimings))
     .then(startup)
     .catch(loadError);
 
@@ -89,10 +91,12 @@
   function load_settings() {
     let defaults = {
       includeLevelUpDay: true,
+      learnAllRadicalsAtOnce: false,
+      radicalsPerDay: 5,
+      learnAllKanjiAtOnce: false,
+      kanjiPerDay: 5,
     };
-    return wkof.Settings.load("vocab_planner", defaults).then(
-      () => (shared.settings = wkof.settings.vocab_planner)
-    );
+    return wkof.Settings.load("vocab_planner", defaults).then(() => (shared.settings = wkof.settings.vocab_planner));
   }
 
   function startup() {
@@ -130,6 +134,10 @@
         on_refresh: settingsRefreshed,
         content: {
             includeLevelUpDay: {type:'checkbox', label:'Learn vocab on level-up day', default:true, hover_tip:"If set, the day you're going to level up is considered a full day to learn vocabulary."},
+            learnAllRadicalsAtOnce: {type:"checkbox", label:"Learn all radicals at once", default:true, hover_tip:"If set, assume that all available radicals are learned as a batch as soon as they are unlocked."},
+            radicalsPerDay: {type:"number", label:"Radicals/Day", default:5, min:1, hover_tip:"How many radicals do you intend to learn per day?"},
+            learnAllKanjiAtOnce: {type:"checkbox", label:"Learn all kanji at once", default:true, hover_tip:"If set, assume that all available kanji are learned as a batch as soon as they are unlocked."},
+            kanjiPerDay: {type:"number", label:"Kanji/Day", default:5, min:1, hover_tip:"How many kanji do you intend to learn per day?"},
         }
     };
     let dialog = new wkof.Settings(config);
@@ -137,13 +145,18 @@
   }
 
   function settingsSaved() {
-    calculateRecommendedVocabPerDay(new Date(Date.now()));
-
+    if (shared.unlocksElement) {
+      shared.unlocksElement.remove();
+      shared.unlocksElement = null;
+    }
     if (shared.lessonBarElement) {
       shared.lessonBarElement.remove();
       shared.lessonBarElement = null;
     }
-    addVocabLessonBar();
+    shared.unlockTimes = {};
+    shared.passTimes = {};
+
+    updateData();
   }
 
   function settingsRefreshed() {}
@@ -161,9 +174,7 @@
       for (let k = 0; k < passingStage; ++k) {
         timings.push(0);
       }
-      timings[passingStage - 1] = getSrsIntervalInSeconds(
-        stages[passingStage - 1]
-      );
+      timings[passingStage - 1] = getSrsIntervalInSeconds(stages[passingStage - 1]);
       for (k = passingStage - 2; k >= 0; --k) {
         timings[k] = timings[k + 1] + getSrsIntervalInSeconds(stages[k]);
       }
@@ -197,63 +208,112 @@
   // ====================================================================================
   function processData(items) {
     const byType = wkof.ItemData.get_index(items, "item_type");
-    const subjectsById = wkof.ItemData.get_index(items, "subject_id");
-    const vocabByStage = wkof.ItemData.get_index(
-      byType.vocabulary,
-      "srs_stage"
-    );
+    const vocabByStage = wkof.ItemData.get_index(byType.vocabulary, "srs_stage");
     const lockedVocab = vocabByStage[-1];
     shared.lockedVocabIds = lockedVocab.map((item) => item.id);
     shared.availableCount = vocabByStage[0] ? vocabByStage[0].length : 0;
 
-    const now = Date.now();
-    for (let i = 0; i < lockedVocab.length; ++i) {
-      projectPassTimeForItem(lockedVocab[i], now, subjectsById);
-    }
-    shared.vocabUnlocks = groupByTime(
-      shared.lockedVocabIds,
-      shared.unlockTimes
-    );
+    // SubjectId -> Individual lesson order
+    radicalOrders = {};
+    getLessonOrders(radicalOrders, wkof.ItemData.get_index(byType.radical, "srs_stage")[0]);
+    sortAndNormalizeOrders(shared.lessonOrders, radicalOrders);
+    kanjiOrders = {};
+    getLessonOrders(kanjiOrders, wkof.ItemData.get_index(byType.kanji, "srs_stage")[-1]);
+    getLessonOrders(kanjiOrders, wkof.ItemData.get_index(byType.kanji, "srs_stage")[0]);
+    sortAndNormalizeOrders(shared.lessonOrders, kanjiOrders);
 
-    const thisLevelKanjiIds = byType.kanji
-      .filter((kanji) => kanji.data.level == wkof.user.level)
-      .map((kanji) => kanji.id);
+    shared.items = items;
+    updateData();
+  }
+
+  function updateData() {
+    const byType = wkof.ItemData.get_index(shared.items, "item_type");
+    const subjectsById = wkof.ItemData.get_index(shared.items, "subject_id");
+    const vocabByStage = wkof.ItemData.get_index(byType.vocabulary, "srs_stage");
+    const lockedVocab = vocabByStage[-1];
+
+    const nowMillis = Date.now();
+    const now = new Date(nowMillis);
+
+    const context = {
+      lessonOrders: shared.lessonOrders,
+      numRadicalsLearnedToday: getNumItemsLearnedToday(byType.radical, now),
+      numKanjiLearnedToday: getNumItemsLearnedToday(byType.kanji, now),
+    };
+
+    for (let i = 0; i < lockedVocab.length; ++i) {
+      projectPassTimeForItem(lockedVocab[i], nowMillis, subjectsById, context);
+    }
+    shared.vocabUnlocks = groupByTime(shared.lockedVocabIds, shared.unlockTimes);
+
+    const thisLevelKanjiIds = getThisLevelItems(byType.kanji).map((item) => item.id);
     // Kanji for which all the current level vocab has already been unlocked haven't been projected yet.
     // For Kanji with locked vocab this is simply a lookup to a cached value.
     for (i = 0; i < thisLevelKanjiIds.length; ++i) {
-      projectPassTimeForItem(
-        subjectsById[thisLevelKanjiIds[i]],
-        now,
-        subjectsById
-      );
+      projectPassTimeForItem(subjectsById[thisLevelKanjiIds[i]], nowMillis, subjectsById, context);
     }
     shared.levelUpTimeMillis = projectLevelUpTime(thisLevelKanjiIds);
 
-    shared.numVocabLearnedToday = getNumVocabLearnedToday(
-      byType.vocabulary,
-      new Date(now)
-    );
-    calculateRecommendedVocabPerDay(new Date(now));
+    shared.numVocabLearnedToday = getNumItemsLearnedToday(byType.vocabulary, now);
+    calculateRecommendedVocabPerDay(now);
 
     addUnlockOverview();
     addVocabLessonBar();
   }
 
-  function projectPassTimeForItem(item, now, subjectsById) {
+  function getThisLevelItems(items) {
+    return items.filter((item) => item.data.level == wkof.user.level);
+  }
+
+  function getLessonOrders(outOrders, items) {
+    if (items) {
+      for (let i = 0; i < items.length; ++i) {
+        outOrders[items[i].id] = items[i].data.lesson_position;
+      }
+    }
+  }
+
+  function sortAndNormalizeOrders(outOrders, inOrders) {
+    const entries = Object.entries(inOrders);
+    entries.sort((lhs, rhs) => lhs[1] - rhs[1]);
+    for (let i = 0; i < entries.length; ++i) {
+      outOrders[entries[i][0]] = i;
+    }
+  }
+
+  function getLessonOffset(lessonOrder, perDay, numLearnedToday) {
+    if (lessonOrder !== undefined) {
+      if (numLearnedToday > perDay) {
+        const dayOffset = Math.floor(lessonOrder / perDay);
+        return (dayOffset + 1) * DayMillis;
+      } else {
+        const dayOffset = Math.floor((lessonOrder + numLearnedToday) / perDay);
+        return dayOffset * DayMillis;
+      }
+    }
+    return 0;
+  }
+
+  function projectPassTimeForItem(item, now, subjectsById, context) {
     if (shared.passTimes[item.id] !== undefined) {
       return shared.passTimes[item.id];
     }
 
     if (item.assignments) {
       // Item is unlocked or learned
-      const passTime = getPassTimeMillis(
-        item.data.spaced_repetition_system_id,
-        item.assignments.srs_stage,
-        item.assignments.available_at
-          ? Date.parse(item.assignments.available_at)
-          : null,
-        now
-      );
+      let availableAt = now;
+      if (item.assignments.available_at) {
+        // Item was already learned
+        availableAt = Date.parse(item.assignments.available_at);
+      } else {
+        if (item.object == "radical" && !shared.settings.learnAllRadicalsAtOnce && shared.settings.radicalsPerDay > 0) {
+          availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.radicalsPerDay, context.numRadicalsLearnedToday);
+        } else if (item.object == "kanji" && !shared.settings.learnAllKanjiAtOnce && shared.settings.kanjiPerDay > 0) {
+          availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.kanjiPerDay, context.numKanjiLearnedToday);
+        }
+      }
+
+      const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, item.assignments.srs_stage, availableAt, now);
       shared.passTimes[item.id] = passTime;
       return passTime;
     }
@@ -271,7 +331,7 @@
             // Component not in the level range, it must have passed on an earlier level
             continue;
           }
-          projectPassTimeForItem(component, now, subjectsById);
+          projectPassTimeForItem(component, now, subjectsById, context);
         }
         if (shared.passTimes[id] > unlockTimeMillis) {
           unlockTimeMillis = shared.passTimes[id];
@@ -281,20 +341,18 @@
       shared.unlockTimes[item.id] = unlockTimeMillis;
     }
 
-    const passTime = getPassTimeMillis(
-      item.data.spaced_repetition_system_id,
-      0,
-      shared.unlockTimes[item.id],
-      now
-    );
+    let availableAt = shared.unlockTimes[item.id];
+    if (item.object == "kanji" && !shared.settings.learnAllKanjiAtOnce && shared.settings.kanjiPerDay > 0) {
+      availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.kanjiPerDay, context.numKanjiLearnedToday);
+    }
+
+    const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, 0, availableAt, now);
     shared.passTimes[item.id] = passTime;
     return passTime;
   }
 
   function getPassTimeMillis(systemId, srsStage, stageTimeMillis, now) {
-    const nextReviewTimeMillis = stageTimeMillis
-      ? Math.max(now, stageTimeMillis)
-      : now;
+    const nextReviewTimeMillis = stageTimeMillis ? Math.max(now, stageTimeMillis) : now;
     const timings = shared.timings[systemId];
     const passingStage = timings.length;
     if (srsStage >= passingStage) {
@@ -339,21 +397,14 @@
     return 0;
   }
 
-  function getNumVocabLearnedToday(vocab, now) {
+  function getNumItemsLearnedToday(items, now) {
     const thisLevel = wkof.user.level;
     let numLearnedToday = 0;
-    for (let i = 0; i < vocab.length; ++i) {
-      const item = vocab[i];
-      if (
-        item.data.level == thisLevel &&
-        item.assignments &&
-        item.assignments.started_at
-      ) {
+    for (let i = 0; i < items.length; ++i) {
+      const item = items[i];
+      if (item.data.level == thisLevel && item.assignments && item.assignments.started_at) {
         const startedAt = new Date(Date.parse(item.assignments.started_at));
-        if (
-          startedAt.getDate() == now.getDate() &&
-          startedAt.getMonth() == now.getMonth()
-        ) {
+        if (startedAt.getDate() == now.getDate() && startedAt.getMonth() == now.getMonth()) {
           ++numLearnedToday;
         }
       }
@@ -373,19 +424,12 @@
   }
 
   function calculateRecommendedVocabPerDay(now) {
-    const numUntilLevelUp =
-      getNumVocabUntilLevelUp() + shared.numVocabLearnedToday;
+    const numUntilLevelUp = getNumVocabUntilLevelUp() + shared.numVocabLearnedToday;
 
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const levelUpDate = new Date(shared.levelUpTimeMillis);
-    const levelUpDay = new Date(
-      levelUpDate.getFullYear(),
-      levelUpDate.getMonth(),
-      levelUpDate.getDate()
-    );
-    const numDays =
-      (levelUpDay.getTime() - today.getTime()) / (24 * 3600 * 1000) +
-      (shared.settings.includeLevelUpDay ? 1 : 0);
+    const levelUpDay = new Date(levelUpDate.getFullYear(), levelUpDate.getMonth(), levelUpDate.getDate());
+    const numDays = (levelUpDay.getTime() - today.getTime()) / (24 * 3600 * 1000) + (shared.settings.includeLevelUpDay ? 1 : 0);
     const recommendedVocabPerDay = Math.ceil(numUntilLevelUp / numDays);
     shared.recommendedVocabPerDay = recommendedVocabPerDay;
     return recommendedVocabPerDay;
@@ -393,12 +437,7 @@
 
   // ====================================================================================
 
-  function createDiv(
-    parent,
-    className,
-    style = undefined,
-    innerHTML = undefined
-  ) {
+  function createDiv(parent, className, style = undefined, innerHTML = undefined) {
     const div = document.createElement("div");
     div.className = className;
     if (style !== undefined) {
@@ -412,9 +451,7 @@
   }
 
   function addUnlockOverview() {
-    const root = document.getElementsByClassName(
-      "wk-panel--review-forecast"
-    )[0];
+    const root = document.getElementsByClassName("wk-panel--review-forecast")[0];
     if (root === undefined) {
       console.log("Review forecast panel not found, can't add Vocab Panel");
       return;
@@ -425,38 +462,27 @@
       return;
     }
 
-    const section = createDiv(
-      contentRoot,
-      "review-forecast__day",
-      "margin-top: 10px"
-    );
-    createDiv(
-      section,
-      "review-forecast__day-title",
-      "padding-bottom: 5px",
-      "Vocabulary Unlocks"
-    );
+    const section = createDiv(contentRoot, "review-forecast__day", "margin-top: 10px");
+    shared.unlocksElement = section;
+    createDiv(section, "review-forecast__day-title", "padding-bottom: 5px", "Vocabulary Unlocks");
 
     const content = createDiv(section, "review-forecast__day-content");
 
-    const formatter = new Intl.DateTimeFormat(undefined, {
+    const shortFormatter = new Intl.DateTimeFormat(undefined, {
       weekday: "short",
       hour: "numeric",
       minute: "numeric",
     });
+    const longFormatter = new Intl.DateTimeFormat(undefined, {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "numeric",
+      minute: "numeric",
+    });
 
-    const maxCount = Math.max(
-      shared.availableCount,
-      Math.max(...shared.vocabUnlocks.map((entry) => entry.count))
-    );
+    const maxCount = Math.max(shared.availableCount, Math.max(...shared.vocabUnlocks.map((entry) => entry.count)));
     if (shared.availableCount > 0) {
-      addUnlockRow(
-        content,
-        "Unlocked",
-        shared.availableCount,
-        shared.availableCount,
-        maxCount
-      );
+      addUnlockRow(content, "Unlocked", shared.availableCount, shared.availableCount, maxCount);
     }
     let unlockCounter = shared.availableCount;
     let levelUpAdded = false;
@@ -464,12 +490,14 @@
     for (let i = 0; i < shared.vocabUnlocks.length; ++i) {
       const date = new Date(parseInt(shared.vocabUnlocks[i].timeMillis));
       if (!levelUpAdded && levelUpDate <= date) {
-        const levelUpTimeStr = formatter.format(levelUpDate);
+        const diff = levelUpDate - Date.now();
+        const levelUpTimeStr = (diff > WeekMillis ? longFormatter : shortFormatter).format(levelUpDate);
         addLevelUpRow(content, levelUpTimeStr);
         levelUpAdded = true;
       }
 
-      const timeStr = formatter.format(date);
+      const diff = date - Date.now();
+      const timeStr = (diff > WeekMillis ? longFormatter : shortFormatter).format(date);
       const count = shared.vocabUnlocks[i].count;
       unlockCounter += count;
       addUnlockRow(content, timeStr, count, unlockCounter, maxCount);
@@ -484,37 +512,16 @@
     );
     const row = createDiv(container, "review-forecast__hour");
     createDiv(row, "review-forecast__hour-title", "flex: 0 0 100px", timeStr);
-    createDiv(
-      row,
-      "review-forecast__increase-indicator",
-      "font-weight: var(--font-weight-bold); text-align: center;",
-      "Level Up!"
-    );
+    createDiv(row, "review-forecast__increase-indicator", "font-weight: var(--font-weight-bold); text-align: center;", "Level Up!");
   }
 
   function addUnlockRow(root, timeStr, count, runningTotal, maxCount) {
     const row = createDiv(root, "review-forecast__hour");
     createDiv(row, "review-forecast__hour-title", "flex: 0 0 100px", timeStr);
     const barRoot = createDiv(row, "review-forecast__increase-indicator");
-    createDiv(
-      barRoot,
-      "review-forecast__increase-bar",
-      `width: ${
-        (count / maxCount) * 100
-      }%; background-color: var(--color-vocabulary);`
-    );
-    createDiv(
-      row,
-      "review-forecast__hour-increase review-forecast__increase",
-      undefined,
-      count
-    );
-    createDiv(
-      row,
-      "review-forecast__hour-total review-forecast__total",
-      undefined,
-      runningTotal
-    );
+    createDiv(barRoot, "review-forecast__increase-bar", `width: ${(count / maxCount) * 100}%; background-color: var(--color-vocabulary);`);
+    createDiv(row, "review-forecast__hour-increase review-forecast__increase", undefined, count);
+    createDiv(row, "review-forecast__hour-total review-forecast__total", undefined, runningTotal);
   }
 
   function addVocabLessonBar() {
@@ -529,18 +536,11 @@
       return;
     }
 
-    const percentage = Math.min(
-      1.0,
-      shared.numVocabLearnedToday / shared.recommendedVocabPerDay
-    );
+    const percentage = Math.min(1.0, shared.numVocabLearnedToday / shared.recommendedVocabPerDay);
 
     const outer = createDiv(root, "vocab-progress-bar");
     shared.lessonBarElement = outer;
-    const bar = createDiv(
-      outer,
-      "vocab-progress-bar__progress",
-      `width: ${percentage * 100}%`
-    );
+    const bar = createDiv(outer, "vocab-progress-bar__progress", `width: ${percentage * 100}%`);
     if (percentage > 0.5) {
       createDiv(
         bar,
