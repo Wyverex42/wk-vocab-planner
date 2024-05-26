@@ -2,11 +2,12 @@
 // @name         Vocab Planner
 // @namespace    wyverex
 // @version      1.0.0
-// @description  Shows unlock information for vocab to allow fast leveling
-// @author       Andreas Krügersen
+// @description  Shows unlock information for vocab and recommended number of vocab/day to clear the queue on level up
+// @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
 // @match        https://www.wanikani.com/dashboard
 // @grant        none
+// @license      MIT
 // ==/UserScript==
 
 (function () {
