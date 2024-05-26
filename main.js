@@ -90,6 +90,9 @@
 
   function load_settings() {
     let defaults = {
+      showUnlocks: true,
+      showNumRecommendedVocab: true,
+
       includeLevelUpDay: true,
       learnAllRadicalsAtOnce: false,
       radicalsPerDay: 5,
@@ -133,11 +136,17 @@
         on_save: settingsSaved,
         on_refresh: settingsRefreshed,
         content: {
-            includeLevelUpDay: {type:'checkbox', label:'Learn vocab on level-up day', default:true, hover_tip:"If set, the day you're going to level up is considered a full day to learn vocabulary."},
-            learnAllRadicalsAtOnce: {type:"checkbox", label:"Learn all radicals at once", default:true, hover_tip:"If set, assume that all available radicals are learned as a batch as soon as they are unlocked."},
-            radicalsPerDay: {type:"number", label:"Radicals/Day", default:5, min:1, hover_tip:"How many radicals do you intend to learn per day?"},
-            learnAllKanjiAtOnce: {type:"checkbox", label:"Learn all kanji at once", default:true, hover_tip:"If set, assume that all available kanji are learned as a batch as soon as they are unlocked."},
-            kanjiPerDay: {type:"number", label:"Kanji/Day", default:5, min:1, hover_tip:"How many kanji do you intend to learn per day?"},
+            display: {type:"group", label:"Display", content: {
+              showUnlocks: {type:"checkbox", label:"Vocabulary unlocks", default:true},
+              showNumRecommendedVocab: {type:"checkbox", label:"Lesson recommendation", default:true, hover_tip:"Displays a progress bar in the lesson panel whenever there's vocabulary available, which displays how many vocabulary items you should learn today to clear your vocabulary queue by the time you level up"},
+            }},
+            config: {type:"group", label:"Configuration", content: {
+              includeLevelUpDay: {type:'checkbox', label:'Learn vocab on level-up day', default:true, hover_tip:"If set, the day you're going to level up is considered a full day to learn vocabulary."},
+              learnAllRadicalsAtOnce: {type:"checkbox", label:"Learn all radicals at once", default:true, hover_tip:"If set, assume that all available radicals are learned as a batch as soon as they are unlocked."},
+              radicalsPerDay: {type:"number", label:"Radicals/Day", default:5, min:1, hover_tip:"How many radicals do you intend to learn per day?"},
+              learnAllKanjiAtOnce: {type:"checkbox", label:"Learn all kanji at once", default:true, hover_tip:"If set, assume that all available kanji are learned as a batch as soon as they are unlocked."},
+              kanjiPerDay: {type:"number", label:"Kanji/Day", default:5, min:1, hover_tip:"How many kanji do you intend to learn per day?"},
+            }}
         }
     };
     let dialog = new wkof.Settings(config);
@@ -451,6 +460,10 @@
   }
 
   function addUnlockOverview() {
+    if (!shared.settings.showUnlocks) {
+      return;
+    }
+
     const root = document.getElementsByClassName("wk-panel--review-forecast")[0];
     if (root === undefined) {
       console.log("Review forecast panel not found, can't add Vocab Panel");
@@ -525,6 +538,10 @@
   }
 
   function addVocabLessonBar() {
+    if (!shared.settings.showNumRecommendedVocab) {
+      return;
+    }
+
     // if (shared.recommendedVocabPerDay == 0) {
     if (shared.availableCount == 0 || shared.recommendedVocabPerDay == 0) {
       return;
