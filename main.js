@@ -113,9 +113,7 @@
       showNumRecommendedVocab: true,
 
       includeLevelUpDay: true,
-      learnAllRadicalsAtOnce: false,
       radicalsPerDay: 5,
-      learnAllKanjiAtOnce: false,
       kanjiPerDay: 5,
     };
     return wkof.Settings.load("vocab_planner", defaults).then(() => (shared.settings = wkof.settings.vocab_planner));
@@ -153,7 +151,7 @@
       script_id: 'vocab_planner',
       title: 'Daily Vocab Planner',
       on_save: settingsSaved,
-      on_refresh: settingsRefreshed,
+      on_change: settingsSaved,
       content: {
         display: {
           type: "group", label: "Display", content: {
@@ -164,10 +162,8 @@
         config: {
           type: "group", label: "Configuration", content: {
             includeLevelUpDay: { type: 'checkbox', label: 'Learn vocab on level-up day', default: true, hover_tip: "If set, the day you're going to level up is considered a full day to learn vocabulary." },
-            learnAllRadicalsAtOnce: { type: "checkbox", label: "Learn all radicals at once", default: true, hover_tip: "If set, assume that all available radicals are learned as a batch as soon as they are unlocked." },
-            radicalsPerDay: { type: "number", label: "Radicals/Day", default: 5, min: 1, hover_tip: "How many radicals do you intend to learn per day?" },
-            learnAllKanjiAtOnce: { type: "checkbox", label: "Learn all kanji at once", default: true, hover_tip: "If set, assume that all available kanji are learned as a batch as soon as they are unlocked." },
-            kanjiPerDay: { type: "number", label: "Kanji/Day", default: 5, min: 1, hover_tip: "How many kanji do you intend to learn per day?" },
+            radicalsPerDay: { type: "number", label: "Radicals/Day", default: 5, min: 0, hover_tip: "How many radicals do you intend to learn per day? Set to 0 if you learn all available radicals as a batch as soon as they are unlocked." },
+            kanjiPerDay: { type: "number", label: "Kanji/Day", default: 5, min: 0, hover_tip: "How many kanji do you intend to learn per day? Set to 0 if you learn all available kanji as a batch as soon as they are unlocked." },
           }
         }
       }
@@ -338,9 +334,9 @@
         // Item was already learned
         availableAt = Date.parse(item.assignments.available_at);
       } else {
-        if (item.object == "radical" && !shared.settings.learnAllRadicalsAtOnce && shared.settings.radicalsPerDay > 0) {
+        if (item.object == "radical" && shared.settings.radicalsPerDay > 0) {
           availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.radicalsPerDay, context.numRadicalsLearnedToday);
-        } else if (item.object == "kanji" && !shared.settings.learnAllKanjiAtOnce && shared.settings.kanjiPerDay > 0) {
+        } else if (item.object == "kanji" && shared.settings.kanjiPerDay > 0) {
           availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.kanjiPerDay, context.numKanjiLearnedToday);
         }
       }
@@ -374,7 +370,7 @@
     }
 
     let availableAt = shared.unlockTimes[item.id];
-    if (item.object == "kanji" && !shared.settings.learnAllKanjiAtOnce && shared.settings.kanjiPerDay > 0) {
+    if (item.object == "kanji" && shared.settings.kanjiPerDay > 0) {
       availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.kanjiPerDay, context.numKanjiLearnedToday);
     }
 
