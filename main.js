@@ -8,6 +8,8 @@
 // @match        https://www.wanikani.com/dashboard
 // @grant        none
 // @license      MIT
+// @downloadURL https://update.greasyfork.org/scripts/496154/Vocab%20Planner.user.js
+// @updateURL https://update.greasyfork.org/scripts/496154/Vocab%20Planner.meta.js
 // ==/UserScript==
 
 (function () {
@@ -47,6 +49,22 @@
     unlocksElement: null,
     lessonBarElement: null,
   };
+
+  const todayFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "numeric"
+  });
+  const shortFormatter = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+  });
+  const longFormatter = new Intl.DateTimeFormat(undefined, {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "numeric",
+    minute: "numeric",
+  });
 
   wkof.include("Apiv2,ItemData,Menu,Settings");
   wkof
@@ -132,23 +150,27 @@
   // prettier-ignore
   function openSettings() {
     let config = {
-        script_id: 'vocab_planner',
-        title: 'Vocab Planner',
-        on_save: settingsSaved,
-        on_refresh: settingsRefreshed,
-        content: {
-            display: {type:"group", label:"Display", content: {
-              showUnlocks: {type:"checkbox", label:"Vocabulary unlocks", default:true},
-              showNumRecommendedVocab: {type:"checkbox", label:"Lesson recommendation", default:true, hover_tip:"Displays a progress bar in the lesson panel whenever there's vocabulary available, which displays how many vocabulary items you should learn today to clear your vocabulary queue by the time you level up"},
-            }},
-            config: {type:"group", label:"Configuration", content: {
-              includeLevelUpDay: {type:'checkbox', label:'Learn vocab on level-up day', default:true, hover_tip:"If set, the day you're going to level up is considered a full day to learn vocabulary."},
-              learnAllRadicalsAtOnce: {type:"checkbox", label:"Learn all radicals at once", default:true, hover_tip:"If set, assume that all available radicals are learned as a batch as soon as they are unlocked."},
-              radicalsPerDay: {type:"number", label:"Radicals/Day", default:5, min:1, hover_tip:"How many radicals do you intend to learn per day?"},
-              learnAllKanjiAtOnce: {type:"checkbox", label:"Learn all kanji at once", default:true, hover_tip:"If set, assume that all available kanji are learned as a batch as soon as they are unlocked."},
-              kanjiPerDay: {type:"number", label:"Kanji/Day", default:5, min:1, hover_tip:"How many kanji do you intend to learn per day?"},
-            }}
+      script_id: 'vocab_planner',
+      title: 'Vocab Planner',
+      on_save: settingsSaved,
+      on_refresh: settingsRefreshed,
+      content: {
+        display: {
+          type: "group", label: "Display", content: {
+            showUnlocks: { type: "checkbox", label: "Vocabulary unlocks", default: true },
+            showNumRecommendedVocab: { type: "checkbox", label: "Lesson recommendation", default: true, hover_tip: "Displays a progress bar in the lesson panel whenever there's vocabulary available, which displays how many vocabulary items you should learn today to clear your vocabulary queue by the time you level up" },
+          }
+        },
+        config: {
+          type: "group", label: "Configuration", content: {
+            includeLevelUpDay: { type: 'checkbox', label: 'Learn vocab on level-up day', default: true, hover_tip: "If set, the day you're going to level up is considered a full day to learn vocabulary." },
+            learnAllRadicalsAtOnce: { type: "checkbox", label: "Learn all radicals at once", default: true, hover_tip: "If set, assume that all available radicals are learned as a batch as soon as they are unlocked." },
+            radicalsPerDay: { type: "number", label: "Radicals/Day", default: 5, min: 1, hover_tip: "How many radicals do you intend to learn per day?" },
+            learnAllKanjiAtOnce: { type: "checkbox", label: "Learn all kanji at once", default: true, hover_tip: "If set, assume that all available kanji are learned as a batch as soon as they are unlocked." },
+            kanjiPerDay: { type: "number", label: "Kanji/Day", default: 5, min: 1, hover_tip: "How many kanji do you intend to learn per day?" },
+          }
         }
+      }
     };
     let dialog = new wkof.Settings(config);
     dialog.open();
@@ -169,7 +191,7 @@
     updateData();
   }
 
-  function settingsRefreshed() {}
+  function settingsRefreshed() { }
 
   // ====================================================================================
   function calculateSrsTimings(data) {
@@ -185,7 +207,7 @@
         timings.push(0);
       }
       timings[passingStage - 1] = getSrsIntervalInSeconds(stages[passingStage - 1]);
-      for (k = passingStage - 2; k >= 0; --k) {
+      for (let k = passingStage - 2; k >= 0; --k) {
         timings[k] = timings[k + 1] + getSrsIntervalInSeconds(stages[k]);
       }
       result[id] = timings;
@@ -224,10 +246,10 @@
     shared.availableCount = vocabByStage[0] ? vocabByStage[0].length : 0;
 
     // SubjectId -> Individual lesson order
-    radicalOrders = {};
+    let radicalOrders = {};
     getLessonOrders(radicalOrders, wkof.ItemData.get_index(byType.radical, "srs_stage")[0]);
     sortAndNormalizeOrders(shared.lessonOrders, radicalOrders);
-    kanjiOrders = {};
+    let kanjiOrders = {};
     getLessonOrders(kanjiOrders, wkof.ItemData.get_index(byType.kanji, "srs_stage")[-1]);
     getLessonOrders(kanjiOrders, wkof.ItemData.get_index(byType.kanji, "srs_stage")[0]);
     sortAndNormalizeOrders(shared.lessonOrders, kanjiOrders);
@@ -378,7 +400,7 @@
   // Given itemIds and a map of Id -> time, returns an array of {timeMilis, count} objects, sorted by timeMillis
   function groupByTime(itemIds, timeSource) {
     const byTime = {};
-    for (i = 0; i < itemIds.length; ++i) {
+    for (let i = 0; i < itemIds.length; ++i) {
       const timeMillis = timeSource[itemIds[i]];
       if (byTime[timeMillis] === undefined) {
         byTime[timeMillis] = 0;
@@ -482,18 +504,6 @@
 
     const content = createDiv(section, "review-forecast__day-content");
 
-    const shortFormatter = new Intl.DateTimeFormat(undefined, {
-      weekday: "short",
-      hour: "numeric",
-      minute: "numeric",
-    });
-    const longFormatter = new Intl.DateTimeFormat(undefined, {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "numeric",
-      minute: "numeric",
-    });
-
     const maxCount = Math.max(shared.availableCount, Math.max(...shared.vocabUnlocks.map((entry) => entry.count)));
     if (shared.availableCount > 0) {
       addUnlockRow(content, "Unlocked", shared.availableCount, shared.availableCount, maxCount);
@@ -501,21 +511,33 @@
     let unlockCounter = shared.availableCount;
     let levelUpAdded = false;
     const levelUpDate = new Date(shared.levelUpTimeMillis);
+    const now = new Date(Date.now());
     for (let i = 0; i < shared.vocabUnlocks.length; ++i) {
       const date = new Date(parseInt(shared.vocabUnlocks[i].timeMillis));
       if (!levelUpAdded && levelUpDate <= date) {
-        const diff = levelUpDate - Date.now();
-        const levelUpTimeStr = (diff > WeekMillis ? longFormatter : shortFormatter).format(levelUpDate);
+        const levelUpTimeStr = getTimeStr(levelUpDate, now);
         addLevelUpRow(content, levelUpTimeStr);
         levelUpAdded = true;
       }
 
-      const diff = date - Date.now();
-      const timeStr = (diff > WeekMillis ? longFormatter : shortFormatter).format(date);
+      const timeStr = getTimeStr(date, now);
       const count = shared.vocabUnlocks[i].count;
       unlockCounter += count;
       addUnlockRow(content, timeStr, count, unlockCounter, maxCount);
     }
+  }
+
+  function getTimeStr(date, now) {
+    const diff = date - now;
+    if (diff > WeekMillis) {
+      return longFormatter.format(date);
+    } else if (diff < DayMillis && date.getDate() == now.getDate()) {
+      if (date.getHours() == now.getHours() && date.getMinutes() == now.getMinutes()) {
+        return "After reviews";
+      }
+      return "Today " + todayFormatter.format(date);
+    }
+    return shortFormatter.format(date);
   }
 
   function addLevelUpRow(root, timeStr) {
@@ -525,13 +547,13 @@
       "border-bottom: 1px solid var(--color-review-forecast-divider); padding-bottom: var(--spacing-xxtight);"
     );
     const row = createDiv(container, "review-forecast__hour");
-    createDiv(row, "review-forecast__hour-title", "flex: 0 0 100px", timeStr);
+    createDiv(row, "review-forecast__hour-title", "flex: 0 0 120px", timeStr);
     createDiv(row, "review-forecast__increase-indicator", "font-weight: var(--font-weight-bold); text-align: center;", "Level Up!");
   }
 
   function addUnlockRow(root, timeStr, count, runningTotal, maxCount) {
     const row = createDiv(root, "review-forecast__hour");
-    createDiv(row, "review-forecast__hour-title", "flex: 0 0 100px", timeStr);
+    createDiv(row, "review-forecast__hour-title", "flex: 0 0 120px", timeStr);
     const barRoot = createDiv(row, "review-forecast__increase-indicator");
     createDiv(barRoot, "review-forecast__increase-bar", `width: ${(count / maxCount) * 100}%; background-color: var(--color-vocabulary);`);
     createDiv(row, "review-forecast__hour-increase review-forecast__increase", undefined, count);
@@ -543,7 +565,6 @@
       return;
     }
 
-    // if (shared.recommendedVocabPerDay == 0) {
     if (shared.availableCount == 0 || shared.recommendedVocabPerDay == 0) {
       return;
     }
@@ -574,6 +595,6 @@
         `${shared.numVocabLearnedToday}/${shared.recommendedVocabPerDay} vocab`
       );
     }
-    const icon = createDiv(bar, "level-progress-bar__icon", "flex: 0 0 18px");
+    createDiv(bar, "level-progress-bar__icon", "flex: 0 0 18px");
   }
 })();
