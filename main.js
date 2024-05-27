@@ -52,7 +52,7 @@
 
   const todayFormatter = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
-    minute: "numeric"
+    minute: "numeric",
   });
   const shortFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
@@ -191,7 +191,7 @@
     updateData();
   }
 
-  function settingsRefreshed() { }
+  function settingsRefreshed() {}
 
   // ====================================================================================
   function calculateSrsTimings(data) {
@@ -463,7 +463,7 @@
     const levelUpDay = new Date(levelUpDate.getFullYear(), levelUpDate.getMonth(), levelUpDate.getDate());
     const numDays = (levelUpDay.getTime() - today.getTime()) / (24 * 3600 * 1000) + (shared.settings.includeLevelUpDay ? 1 : 0);
     const recommendedVocabPerDay = Math.ceil(numUntilLevelUp / numDays);
-    shared.recommendedVocabPerDay = recommendedVocabPerDay;
+    shared.recommendedVocabPerDay = Math.min(shared.availableCount, recommendedVocabPerDay);
     return recommendedVocabPerDay;
   }
 
