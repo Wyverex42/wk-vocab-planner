@@ -1,15 +1,13 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.0.0
-// @description  Shows unlock information for vocab and recommended number of vocab/day to clear the queue on level up
+// @version      1.1.0
+// @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
 // @match        https://www.wanikani.com/dashboard
 // @grant        none
 // @license      MIT
-// @downloadURL https://update.greasyfork.org/scripts/496154/Vocab%20Planner.user.js
-// @updateURL https://update.greasyfork.org/scripts/496154/Vocab%20Planner.meta.js
 // ==/UserScript==
 
 (function () {
@@ -187,8 +185,6 @@
     updateData();
   }
 
-  function settingsRefreshed() {}
-
   // ====================================================================================
   function calculateSrsTimings(data) {
     let result = {};
@@ -277,7 +273,7 @@
     const thisLevelKanjiIds = getThisLevelItems(byType.kanji).map((item) => item.id);
     // Kanji for which all the current level vocab has already been unlocked haven't been projected yet.
     // For Kanji with locked vocab this is simply a lookup to a cached value.
-    for (i = 0; i < thisLevelKanjiIds.length; ++i) {
+    for (let i = 0; i < thisLevelKanjiIds.length; ++i) {
       projectPassTimeForItem(subjectsById[thisLevelKanjiIds[i]], nowMillis, subjectsById, context);
     }
     shared.levelUpTimeMillis = projectLevelUpTime(thisLevelKanjiIds);
