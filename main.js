@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.0
+// @version      1.1.1
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -411,7 +411,7 @@
     const kanjiPasses = groupByTime(kanjiIds, shared.passTimes);
     const numKanjisToLevelUp = Math.ceil(kanjiIds.length * 0.9);
     let remaining = kanjiIds.length - numKanjisToLevelUp;
-    for (let i = kanjiPasses.length - 1; i >= 0; ++i) {
+    for (let i = kanjiPasses.length - 1; i >= 0; --i) {
       remaining -= kanjiPasses[i].count;
       if (remaining <= 0) {
         return parseInt(kanjiPasses[i].timeMillis);
