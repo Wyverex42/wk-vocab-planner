@@ -500,13 +500,13 @@
 
     const section = createDiv(contentRoot, "review-forecast__day", "margin-top: 10px");
     shared.unlocksElement = section;
-    createDiv(section, "review-forecast__day-title", "padding-bottom: 5px", "Vocabulary Unlocks");
+    createDiv(section, "review-forecast__day-title", "padding-bottom: 5px", "Vocabulary unlocks");
 
     const content = createDiv(section, "review-forecast__day-content");
 
     const maxCount = Math.max(shared.availableCount, Math.max(...shared.vocabUnlocks.map((entry) => entry.count)));
     if (shared.availableCount > 0) {
-      addUnlockRow(content, "Unlocked", shared.availableCount, shared.availableCount, maxCount);
+      addUnlockRow(content, "Unlocked", shared.availableCount, shared.availableCount, maxCount, false);
     }
     let unlockCounter = shared.availableCount;
     let levelUpAdded = false;
@@ -551,12 +551,16 @@
     createDiv(row, "review-forecast__increase-indicator", "font-weight: var(--font-weight-bold); text-align: center;", "Level Up!");
   }
 
-  function addUnlockRow(root, timeStr, count, runningTotal, maxCount) {
+  function addUnlockRow(root, timeStr, count, runningTotal, maxCount, showIncrease = true) {
     const row = createDiv(root, "review-forecast__hour");
     createDiv(row, "review-forecast__hour-title", "flex: 0 0 120px", timeStr);
     const barRoot = createDiv(row, "review-forecast__increase-indicator");
     createDiv(barRoot, "review-forecast__increase-bar", `width: ${(count / maxCount) * 100}%; background-color: var(--color-vocabulary);`);
-    createDiv(row, "review-forecast__hour-increase review-forecast__increase", undefined, count);
+    if (showIncrease) {
+      createDiv(row, "review-forecast__hour-increase review-forecast__increase", undefined, count);
+    } else {
+      createDiv(row, "review-forecast__hour-increase", "flex: 0 0 56px");
+    }
     createDiv(row, "review-forecast__hour-total review-forecast__total", undefined, runningTotal);
   }
 
