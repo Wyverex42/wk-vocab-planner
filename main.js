@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Vocab Planner
+// @name         Daily Vocab Planner
 // @namespace    wyverex
 // @version      1.0.0
 // @description  Shows unlock information for vocab and recommended number of vocab/day to clear the queue on level up
@@ -75,7 +75,7 @@
     .catch(loadError);
 
   function loadError(e) {
-    console.error('Failed to load data from WKOF for "Vocab Planner"', e);
+    console.error('Failed to load data from WKOF for "Daily Vocab Planner"', e);
   }
 
   function installCSS() {
@@ -142,7 +142,7 @@
     wkof.Menu.insert_script_link({
       name: "vocab_planner",
       submenu: "Settings",
-      title: "Vocab Planner",
+      title: "Daily Vocab Planner",
       on_click: openSettings,
     });
   }
@@ -151,7 +151,7 @@
   function openSettings() {
     let config = {
       script_id: 'vocab_planner',
-      title: 'Vocab Planner',
+      title: 'Daily Vocab Planner',
       on_save: settingsSaved,
       on_refresh: settingsRefreshed,
       content: {
