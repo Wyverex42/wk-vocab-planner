@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.2
+// @version      1.1.3
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -422,11 +422,10 @@
   }
 
   function getNumItemsLearnedToday(items, now) {
-    const thisLevel = wkof.user.level;
     let numLearnedToday = 0;
     for (let i = 0; i < items.length; ++i) {
       const item = items[i];
-      if (item.data.level == thisLevel && item.assignments && item.assignments.started_at) {
+      if (item.assignments && item.assignments.started_at) {
         const startedAt = new Date(Date.parse(item.assignments.started_at));
         if (startedAt.getDate() == now.getDate() && startedAt.getMonth() == now.getMonth()) {
           ++numLearnedToday;
