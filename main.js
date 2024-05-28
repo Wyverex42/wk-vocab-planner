@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.1
+// @version      1.1.2
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -454,9 +454,8 @@
     const levelUpDate = new Date(shared.levelUpTimeMillis);
     const levelUpDay = new Date(levelUpDate.getFullYear(), levelUpDate.getMonth(), levelUpDate.getDate());
     const numDays = (levelUpDay.getTime() - today.getTime()) / (24 * 3600 * 1000) + (shared.settings.includeLevelUpDay ? 1 : 0);
-    const recommendedVocabPerDay = Math.ceil(numUntilLevelUp / numDays);
-    shared.recommendedVocabPerDay = Math.min(shared.availableCount, recommendedVocabPerDay);
-    return recommendedVocabPerDay;
+    shared.recommendedVocabPerDay = Math.ceil(numUntilLevelUp / numDays);
+    return shared.recommendedVocabPerDay;
   }
 
   // ====================================================================================
@@ -561,7 +560,7 @@
       return;
     }
 
-    if (shared.availableCount == 0 || shared.recommendedVocabPerDay == 0) {
+    if (shared.recommendedVocabPerDay == 0 || (shared.availableCount == 0 && shared.numVocabLearnedToday == 0)) {
       return;
     }
 
