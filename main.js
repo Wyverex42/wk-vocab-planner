@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.3
+// @version      1.1.4
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -126,7 +126,7 @@
         options: { subjects: true, assignments: true },
         filters: {
           level: "-1..+0",
-          item_type: "rad, kan, voc",
+          item_type: "rad, kan, voc, kana_voc",
         },
       },
     };
@@ -232,7 +232,8 @@
   // ====================================================================================
   function processData(items) {
     const byType = wkof.ItemData.get_index(items, "item_type");
-    const vocabByStage = wkof.ItemData.get_index(byType.vocabulary, "srs_stage");
+    const allVocab = [...byType.vocabulary, ...byType.kana_vocabulary];
+    const vocabByStage = wkof.ItemData.get_index(allVocab, "srs_stage");
     const lockedVocab = vocabByStage[-1];
     shared.lockedVocabIds = lockedVocab.map((item) => item.id);
     shared.availableCount = vocabByStage[0] ? vocabByStage[0].length : 0;
@@ -252,8 +253,9 @@
 
   function updateData() {
     const byType = wkof.ItemData.get_index(shared.items, "item_type");
+    const allVocab = [...byType.vocabulary, ...byType.kana_vocabulary];
     const subjectsById = wkof.ItemData.get_index(shared.items, "subject_id");
-    const vocabByStage = wkof.ItemData.get_index(byType.vocabulary, "srs_stage");
+    const vocabByStage = wkof.ItemData.get_index(allVocab, "srs_stage");
     const lockedVocab = vocabByStage[-1];
 
     const nowMillis = Date.now();
@@ -278,7 +280,7 @@
     }
     shared.levelUpTimeMillis = projectLevelUpTime(thisLevelKanjiIds);
 
-    shared.numVocabLearnedToday = getNumItemsLearnedToday(byType.vocabulary, now);
+    shared.numVocabLearnedToday = getNumItemsLearnedToday(allVocab, now);
     calculateRecommendedVocabPerDay(now);
 
     addUnlockOverview();
