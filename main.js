@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.4
+// @version      1.1.5
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -41,8 +41,6 @@
     levelUpTimeMillis: 0,
     numVocabLearnedToday: 0,
     recommendedVocabPerDay: 0,
-    // SubjectId -> Normalized lesson order
-    lessonOrders: {},
 
     unlocksElement: null,
     lessonBarElement: null,
@@ -238,15 +236,6 @@
     shared.lockedVocabIds = lockedVocab.map((item) => item.id);
     shared.availableCount = vocabByStage[0] ? vocabByStage[0].length : 0;
 
-    // SubjectId -> Individual lesson order
-    let radicalOrders = {};
-    getLessonOrders(radicalOrders, wkof.ItemData.get_index(byType.radical, "srs_stage")[0]);
-    sortAndNormalizeOrders(shared.lessonOrders, radicalOrders);
-    let kanjiOrders = {};
-    getLessonOrders(kanjiOrders, wkof.ItemData.get_index(byType.kanji, "srs_stage")[-1]);
-    getLessonOrders(kanjiOrders, wkof.ItemData.get_index(byType.kanji, "srs_stage")[0]);
-    sortAndNormalizeOrders(shared.lessonOrders, kanjiOrders);
-
     shared.items = items;
     updateData();
   }
@@ -262,10 +251,11 @@
     const now = new Date(nowMillis);
 
     const context = {
-      lessonOrders: shared.lessonOrders,
       numRadicalsLearnedToday: getNumItemsLearnedToday(byType.radical, now),
       numKanjiLearnedToday: getNumItemsLearnedToday(byType.kanji, now),
     };
+    context.radicalLessonsPerDay = [context.numRadicalsLearnedToday];
+    context.kanjiLessonsPerDay = [context.numKanjiLearnedToday];
 
     for (let i = 0; i < lockedVocab.length; ++i) {
       projectPassTimeForItem(lockedVocab[i], nowMillis, subjectsById, context);
@@ -291,55 +281,42 @@
     return items.filter((item) => item.data.level == wkof.user.level);
   }
 
-  function getLessonOrders(outOrders, items) {
-    if (items) {
-      for (let i = 0; i < items.length; ++i) {
-        outOrders[items[i].id] = items[i].data.lesson_position;
+  function projectAvailableDateOffset(passesPerDay, nowMillis, availableAt, perDay) {
+    const dayOffset = new Date(availableAt).getDate() - new Date(nowMillis).getDate();
+
+    let tryOffset = dayOffset;
+    while (true) {
+      while (passesPerDay.length < tryOffset + 1) {
+        passesPerDay.push(0);
       }
-    }
-  }
-
-  function sortAndNormalizeOrders(outOrders, inOrders) {
-    const entries = Object.entries(inOrders);
-    entries.sort((lhs, rhs) => lhs[1] - rhs[1]);
-    for (let i = 0; i < entries.length; ++i) {
-      outOrders[entries[i][0]] = i;
-    }
-  }
-
-  function getLessonOffset(lessonOrder, perDay, numLearnedToday) {
-    if (lessonOrder !== undefined) {
-      if (numLearnedToday > perDay) {
-        const dayOffset = Math.floor(lessonOrder / perDay);
-        return (dayOffset + 1) * DayMillis;
-      } else {
-        const dayOffset = Math.floor((lessonOrder + numLearnedToday) / perDay);
-        return dayOffset * DayMillis;
+      if (passesPerDay[tryOffset] < perDay) {
+        passesPerDay[tryOffset]++;
+        return tryOffset * DayMillis;
       }
+      ++tryOffset;
     }
-    return 0;
   }
 
-  function projectPassTimeForItem(item, now, subjectsById, context) {
+  function projectPassTimeForItem(item, nowMillis, subjectsById, context) {
     if (shared.passTimes[item.id] !== undefined) {
       return shared.passTimes[item.id];
     }
 
     if (item.assignments) {
       // Item is unlocked or learned
-      let availableAt = now;
+      let availableAt = nowMillis;
       if (item.assignments.available_at) {
         // Item was already learned
         availableAt = Date.parse(item.assignments.available_at);
       } else {
         if (item.object == "radical" && shared.settings.radicalsPerDay > 0) {
-          availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.radicalsPerDay, context.numRadicalsLearnedToday);
+          availableAt += projectAvailableDateOffset(context.radicalLessonsPerDay, nowMillis, availableAt, shared.settings.radicalsPerDay);
         } else if (item.object == "kanji" && shared.settings.kanjiPerDay > 0) {
-          availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.kanjiPerDay, context.numKanjiLearnedToday);
+          availableAt += projectAvailableDateOffset(context.kanjiLessonsPerDay, nowMillis, availableAt, shared.settings.kanjiPerDay);
         }
       }
 
-      const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, item.assignments.srs_stage, availableAt, now);
+      const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, item.assignments.srs_stage, availableAt, nowMillis);
       shared.passTimes[item.id] = passTime;
       return passTime;
     }
@@ -357,7 +334,7 @@
             // Component not in the level range, it must have passed on an earlier level
             continue;
           }
-          projectPassTimeForItem(component, now, subjectsById, context);
+          projectPassTimeForItem(component, nowMillis, subjectsById, context);
         }
         if (shared.passTimes[id] > unlockTimeMillis) {
           unlockTimeMillis = shared.passTimes[id];
@@ -369,16 +346,16 @@
 
     let availableAt = shared.unlockTimes[item.id];
     if (item.object == "kanji" && shared.settings.kanjiPerDay > 0) {
-      availableAt += getLessonOffset(context.lessonOrders[item.id], shared.settings.kanjiPerDay, context.numKanjiLearnedToday);
+      availableAt = nowMillis + projectAvailableDateOffset(context.kanjiLessonsPerDay, nowMillis, availableAt, shared.settings.kanjiPerDay);
     }
 
-    const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, 0, availableAt, now);
+    const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, 0, availableAt, nowMillis);
     shared.passTimes[item.id] = passTime;
     return passTime;
   }
 
-  function getPassTimeMillis(systemId, srsStage, stageTimeMillis, now) {
-    const nextReviewTimeMillis = stageTimeMillis ? Math.max(now, stageTimeMillis) : now;
+  function getPassTimeMillis(systemId, srsStage, stageTimeMillis, nowMillis) {
+    const nextReviewTimeMillis = stageTimeMillis ? Math.max(nowMillis, stageTimeMillis) : nowMillis;
     const timings = shared.timings[systemId];
     const passingStage = timings.length;
     if (srsStage >= passingStage) {
