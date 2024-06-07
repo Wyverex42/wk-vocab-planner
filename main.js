@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.6
+// @version      1.1.7
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -111,6 +111,7 @@
       includeLevelUpDay: true,
       radicalsPerDay: 5,
       kanjiPerDay: 5,
+      lessonHour: 9,
     };
     return wkof.Settings.load("vocab_planner", defaults).then(() => (shared.settings = wkof.settings.vocab_planner));
   }
@@ -160,6 +161,7 @@
             includeLevelUpDay: { type: 'checkbox', label: 'Learn vocab on level-up day', default: true, hover_tip: "If set, the day you're going to level up is considered a full day to learn vocabulary." },
             radicalsPerDay: { type: "number", label: "Radicals/Day", default: 5, min: 0, hover_tip: "How many radicals do you intend to learn per day? Set to 0 if you learn all available radicals as a batch as soon as they are unlocked." },
             kanjiPerDay: { type: "number", label: "Kanji/Day", default: 5, min: 0, hover_tip: "How many kanji do you intend to learn per day? Set to 0 if you learn all available kanji as a batch as soon as they are unlocked." },
+            lessonHour: { type: "number", label: "Daily lesson hour (24h format)", default: 9, min: 0, max: 23, hover_tip: "Roughly at which hour do you usually learn radicals/kanji each day? This is used to make the unlock predictions a bit more accurate." },
           }
         }
       }
@@ -281,8 +283,9 @@
     return items.filter((item) => item.data.level == wkof.user.level);
   }
 
-  function projectAvailableDateOffset(passesPerDay, nowMillis, availableAt, perDay) {
-    const dayOffset = new Date(availableAt).getDate() - new Date(nowMillis).getDate();
+  function projectLessonDate(passesPerDay, nowMillis, availableAt, perDay) {
+    const now = new Date(nowMillis);
+    const dayOffset = new Date(availableAt).getDate() - now.getDate();
 
     let tryOffset = dayOffset;
     while (true) {
@@ -291,7 +294,12 @@
       }
       if (passesPerDay[tryOffset] < perDay) {
         passesPerDay[tryOffset]++;
-        return tryOffset * DayMillis;
+        if (tryOffset == 0) {
+          // Available today, assume we're learning it now
+          return nowMillis;
+        }
+        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, shared.settings.lessonHour);
+        return tomorrow.getTime() + (tryOffset - 1) * DayMillis;
       }
       ++tryOffset;
     }
@@ -310,13 +318,13 @@
         availableAt = Date.parse(item.assignments.available_at);
       } else {
         if (item.object == "radical" && shared.settings.radicalsPerDay > 0) {
-          availableAt += projectAvailableDateOffset(context.radicalLessonsPerDay, nowMillis, availableAt, shared.settings.radicalsPerDay);
+          availableAt = projectLessonDate(context.radicalLessonsPerDay, nowMillis, availableAt, shared.settings.radicalsPerDay);
         } else if (item.object == "kanji" && shared.settings.kanjiPerDay > 0) {
-          availableAt += projectAvailableDateOffset(context.kanjiLessonsPerDay, nowMillis, availableAt, shared.settings.kanjiPerDay);
+          availableAt = projectLessonDate(context.kanjiLessonsPerDay, nowMillis, availableAt, shared.settings.kanjiPerDay);
         }
       }
 
-      const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, item.assignments.srs_stage, availableAt, nowMillis);
+      const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, item.assignments.srs_stage, availableAt);
       shared.passTimes[item.id] = passTime;
       return passTime;
     }
@@ -346,26 +354,25 @@
 
     let availableAt = shared.unlockTimes[item.id];
     if (item.object == "kanji" && shared.settings.kanjiPerDay > 0) {
-      availableAt = nowMillis + projectAvailableDateOffset(context.kanjiLessonsPerDay, nowMillis, availableAt, shared.settings.kanjiPerDay);
+      availableAt = projectLessonDate(context.kanjiLessonsPerDay, nowMillis, availableAt, shared.settings.kanjiPerDay);
     }
 
-    const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, 0, availableAt, nowMillis);
+    const passTime = getPassTimeMillis(item.data.spaced_repetition_system_id, 0, availableAt);
     shared.passTimes[item.id] = passTime;
     return passTime;
   }
 
-  function getPassTimeMillis(systemId, srsStage, stageTimeMillis, nowMillis) {
-    const nextReviewTimeMillis = stageTimeMillis ? Math.max(nowMillis, stageTimeMillis) : nowMillis;
+  function getPassTimeMillis(systemId, srsStage, lessonOrReviewTimeMillis) {
     const timings = shared.timings[systemId];
     const passingStage = timings.length;
     if (srsStage >= passingStage) {
       return 0;
     }
     if (srsStage == passingStage - 1) {
-      return nextReviewTimeMillis;
+      return lessonOrReviewTimeMillis;
     }
     const secondsToPass = timings[srsStage + 1];
-    return nextReviewTimeMillis + secondsToPass * 1000;
+    return lessonOrReviewTimeMillis + secondsToPass * 1000;
   }
 
   // Given itemIds and a map of Id -> time, returns an array of {timeMilis, count} objects, sorted by timeMillis
