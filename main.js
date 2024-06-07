@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.5
+// @version      1.1.6
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -230,7 +230,7 @@
   // ====================================================================================
   function processData(items) {
     const byType = wkof.ItemData.get_index(items, "item_type");
-    const allVocab = [...byType.vocabulary, ...byType.kana_vocabulary];
+    const allVocab = [...(byType.vocabulary || []), ...(byType.kana_vocabulary || [])];
     const vocabByStage = wkof.ItemData.get_index(allVocab, "srs_stage");
     const lockedVocab = vocabByStage[-1];
     shared.lockedVocabIds = lockedVocab.map((item) => item.id);
@@ -242,7 +242,7 @@
 
   function updateData() {
     const byType = wkof.ItemData.get_index(shared.items, "item_type");
-    const allVocab = [...byType.vocabulary, ...byType.kana_vocabulary];
+    const allVocab = [...(byType.vocabulary || []), ...(byType.kana_vocabulary || [])];
     const subjectsById = wkof.ItemData.get_index(shared.items, "subject_id");
     const vocabByStage = wkof.ItemData.get_index(allVocab, "srs_stage");
     const lockedVocab = vocabByStage[-1];
