@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.7
+// @version      1.1.8
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -262,7 +262,7 @@
     for (let i = 0; i < lockedVocab.length; ++i) {
       projectPassTimeForItem(lockedVocab[i], nowMillis, subjectsById, context);
     }
-    shared.vocabUnlocks = groupByTime(shared.lockedVocabIds, shared.unlockTimes);
+    shared.vocabUnlocks = groupByTime(shared.lockedVocabIds, shared.unlockTimes, nowMillis);
 
     const thisLevelKanjiIds = getThisLevelItems(byType.kanji).map((item) => item.id);
     // Kanji for which all the current level vocab has already been unlocked haven't been projected yet.
@@ -376,7 +376,7 @@
   }
 
   // Given itemIds and a map of Id -> time, returns an array of {timeMilis, count} objects, sorted by timeMillis
-  function groupByTime(itemIds, timeSource) {
+  function groupByTime(itemIds, timeSource, groupCutoff) {
     const byTime = {};
     for (let i = 0; i < itemIds.length; ++i) {
       const timeMillis = timeSource[itemIds[i]];
@@ -385,8 +385,15 @@
       }
       byTime[timeMillis]++;
     }
-    const byTimeArray = Object.entries(byTime);
+    let byTimeArray = Object.entries(byTime);
     byTimeArray.sort((lhs, rhs) => lhs[0] - rhs[0]);
+    // Group up entries that are below the cutoff
+    if (groupCutoff) {
+      while (byTimeArray.length > 1 && parseInt(byTimeArray[1][0]) <= groupCutoff) {
+        byTimeArray[0][1] += byTimeArray[1][1];
+        byTimeArray = [byTimeArray[0], ...byTimeArray.slice(2)];
+      }
+    }
     return byTimeArray.map((entry) => {
       return { timeMillis: entry[0], count: entry[1] };
     });
@@ -508,7 +515,7 @@
     if (diff > WeekMillis) {
       return longFormatter.format(date);
     } else if (diff < DayMillis && date.getDate() == now.getDate()) {
-      if (date.getHours() == now.getHours() && date.getMinutes() == now.getMinutes()) {
+      if (date.getTime() <= now.getTime()) {
         return "After reviews";
       }
       return "Today " + todayFormatter.format(date);
