@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.1.8
+// @version      1.2.0
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -12,9 +12,7 @@
 
 (function () {
   if (!window.wkof) {
-    alert(
-      '"Wanikani Levels Overview Plus" script requires Wanikani Open Framework.\nYou will now be forwarded to installation instructions.'
-    );
+    alert('"Daily Vocab Planner" script requires Wanikani Open Framework.\nYou will now be forwarded to installation instructions.');
     window.location.href = "https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549";
     return;
   }
@@ -25,6 +23,7 @@
   const wkof = window.wkof;
   const shared = {
     settings: {},
+    wffSettings: {},
     items: {},
 
     // SRS system id -> [seconds to pass]
@@ -107,13 +106,17 @@
     let defaults = {
       showUnlocks: true,
       showNumRecommendedVocab: true,
+      useWFFData: true,
 
       includeLevelUpDay: true,
       radicalsPerDay: 5,
       kanjiPerDay: 5,
       lessonHour: 9,
     };
-    return wkof.Settings.load("vocab_planner", defaults).then(() => (shared.settings = wkof.settings.vocab_planner));
+    return wkof.Settings.load("vocab_planner", defaults).then(() => {
+      shared.settings = wkof.settings.vocab_planner;
+      shared.wffSettings = wkof.settings.word_frequency_filter;
+    });
   }
 
   function startup() {
@@ -154,6 +157,7 @@
           type: "group", label: "Display", content: {
             showUnlocks: { type: "checkbox", label: "Vocabulary unlocks", default: true },
             showNumRecommendedVocab: { type: "checkbox", label: "Lesson recommendation", default: true, hover_tip: "Displays a progress bar in the lesson panel whenever there's vocabulary available, which displays how many vocabulary items you should learn today to clear your vocabulary queue by the time you level up" },
+            useWFFData: { type: "checkbox", label: "Use Word Frequency Filter", default: true, hover_tip: "Requires \"Word Frequency Filter\" to be installed. The number of vocab to learn is based on the frequency cutoff set in WFF." },
           }
         },
         config: {
@@ -231,13 +235,6 @@
 
   // ====================================================================================
   function processData(items) {
-    const byType = wkof.ItemData.get_index(items, "item_type");
-    const allVocab = [...(byType.vocabulary || []), ...(byType.kana_vocabulary || [])];
-    const vocabByStage = wkof.ItemData.get_index(allVocab, "srs_stage");
-    const lockedVocab = vocabByStage[-1];
-    shared.lockedVocabIds = lockedVocab.map((item) => item.id);
-    shared.availableCount = vocabByStage[0] ? vocabByStage[0].length : 0;
-
     shared.items = items;
     updateData();
   }
@@ -245,9 +242,12 @@
   function updateData() {
     const byType = wkof.ItemData.get_index(shared.items, "item_type");
     const allVocab = [...(byType.vocabulary || []), ...(byType.kana_vocabulary || [])];
+    const filtered = filterVocabByWFF(allVocab);
     const subjectsById = wkof.ItemData.get_index(shared.items, "subject_id");
-    const vocabByStage = wkof.ItemData.get_index(allVocab, "srs_stage");
+    const vocabByStage = wkof.ItemData.get_index(filtered, "srs_stage");
     const lockedVocab = vocabByStage[-1];
+    shared.lockedVocabIds = lockedVocab.map((item) => item.id);
+    shared.availableCount = vocabByStage[0] ? vocabByStage[0].length : 0;
 
     const nowMillis = Date.now();
     const now = new Date(nowMillis);
@@ -272,11 +272,25 @@
     }
     shared.levelUpTimeMillis = projectLevelUpTime(thisLevelKanjiIds);
 
-    shared.numVocabLearnedToday = getNumItemsLearnedToday(allVocab, now);
+    shared.numVocabLearnedToday = getNumItemsLearnedToday(filtered, now);
     calculateRecommendedVocabPerDay(now);
 
     addUnlockOverview();
     addVocabLessonBar();
+  }
+
+  function filterVocabByWFF(allVocab) {
+    if (shared.settings.useWFFData && shared.wffSettings && window.WFF_FrequencyData) {
+      const cutoff = shared.wffSettings.rankCutoff;
+      const filtered = allVocab.filter((v) => {
+        const slug = v.data.slug;
+        const freqData = window.WFF_FrequencyData[slug];
+        const rank = window.WFF_getRank(freqData);
+        return rank <= cutoff;
+      });
+      return filtered;
+    }
+    return allVocab;
   }
 
   function getThisLevelItems(items) {
