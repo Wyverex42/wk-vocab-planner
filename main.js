@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Daily Vocab Planner
 // @namespace    wyverex
-// @version      1.2.0
+// @version      1.2.1
 // @description  Shows unlock information for vocab and the recommended number of vocab/day to clear the queue on level up
 // @author       Andreas Krügersen-Clark
 // @match        https://www.wanikani.com/
@@ -115,7 +115,7 @@
     };
     return wkof.Settings.load("vocab_planner", defaults).then(() => {
       shared.settings = wkof.settings.vocab_planner;
-      shared.wffSettings = wkof.settings.word_frequency_filter;
+      shared.wffSettings = wkof.settings["wk-word-frequency-filter"];
     });
   }
 
@@ -280,13 +280,14 @@
   }
 
   function filterVocabByWFF(allVocab) {
-    if (shared.settings.useWFFData && shared.wffSettings && window.WFF_FrequencyData) {
+    if (shared.settings.useWFFData && shared.wffSettings && window.wff.FrequencyData) {
       const cutoff = shared.wffSettings.rankCutoff;
       const filtered = allVocab.filter((v) => {
         const slug = v.data.slug;
-        const freqData = window.WFF_FrequencyData[slug];
-        const rank = window.WFF_getRank(freqData);
-        return rank <= cutoff;
+        const freqData = window.wff.FrequencyData[slug];
+        const rank = window.wff.getRank(freqData);
+        const isMarked = window.wff.isMarked(v.id);
+        return rank <= cutoff || isMarked;
       });
       return filtered;
     }
