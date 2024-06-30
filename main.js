@@ -523,6 +523,10 @@
       unlockCounter += count;
       addUnlockRow(content, timeStr, count, unlockCounter, maxCount);
     }
+    if (!levelUpAdded) {
+      const levelUpTimeStr = getTimeStr(levelUpDate, now);
+      addLevelUpRow(content, levelUpTimeStr);
+    }
   }
 
   function getTimeStr(date, now) {
